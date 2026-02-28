@@ -1,50 +1,37 @@
-import { MemoryRouter as Router, Routes, Route } from 'react-router-dom';
-import icon from '../../assets/icon.svg';
 import './App.css';
 
-function Hello() {
-  return (
-    <div>
-      <div className="Hello">
-        <img width="200" alt="icon" src={icon} />
-      </div>
-      <h1>electron-react-boilerplate</h1>
-      <div className="Hello">
-        <a
-          href="https://electron-react-boilerplate.js.org/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <button type="button">
-            <span role="img" aria-label="books">
-              📚
-            </span>
-            Read our docs
-          </button>
-        </a>
-        <a
-          href="https://github.com/sponsors/electron-react-boilerplate"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <button type="button">
-            <span role="img" aria-label="folded hands">
-              🙏
-            </span>
-            Donate
-          </button>
-        </a>
-      </div>
-    </div>
-  );
-}
+import StatusBar from '../components/StatusBar';
+import TitleBar from '../components/TitleBar';
+import { useSystemMonitor } from '../hooks/useSystemMonitor';
 
 export default function App() {
+  const {
+    data,
+    cpuHistory,
+    memHistory,
+    netRxHistory,
+    netTxHistory,
+    isElectron,
+  } = useSystemMonitor();
+
+  if (!data) {
+    return (
+      <div className="loading">
+        <div className="loading-spinner" />
+        <p>Initializing monitors...</p>
+      </div>
+    );
+  }
+
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Hello />} />
-      </Routes>
-    </Router>
+    <div className="app">
+      <TitleBar />
+
+      <main className="dashboard">
+        <div className="row gauges-row"></div>
+      </main>
+
+      <StatusBar data={data} isElectron={isElectron} />
+    </div>
   );
 }
