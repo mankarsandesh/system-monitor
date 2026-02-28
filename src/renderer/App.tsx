@@ -2,8 +2,10 @@ import './App.css';
 
 import { Cpu, MemoryStick, Wifi } from 'lucide-react';
 import CoreGrid from '../components/CoreGrid';
+import DiskCard from '../components/DiskCard';
 import GaugeCard from '../components/GaugeCard';
 import LineChartCard from '../components/LineChartCard';
+import ProcessTable from '../components/ProcessTable';
 import StatusBar from '../components/StatusBar';
 import TitleBar from '../components/TitleBar';
 import { useSystemMonitor } from '../hooks/useSystemMonitor';
@@ -77,6 +79,15 @@ export default function App() {
             color="#ff6b9d"
             icon={<Wifi size={13} />}
             formatValue={(v) => `${v} KB/s`}
+          />
+        </div>
+
+         <div className="row bottom-row">
+          <DiskCard disks={data.disk} />
+          <ProcessTable
+            processes={data.processes.list}
+            total={data.processes.all}
+            running={data.processes.running}
           />
         </div>
 
