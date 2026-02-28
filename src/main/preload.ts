@@ -1,4 +1,3 @@
-// Disable no-unused-vars, broken for spread args
 /* eslint no-unused-vars: off */
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
 
@@ -13,7 +12,6 @@ const electronHandler = {
       const subscription = (_event: IpcRendererEvent, ...args: unknown[]) =>
         func(...args);
       ipcRenderer.on(channel, subscription);
-
       return () => {
         ipcRenderer.removeListener(channel, subscription);
       };
@@ -25,5 +23,20 @@ const electronHandler = {
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);
+
+// System monitor API
+contextBridge.exposeInMainWorld('electronAPI', {
+  startMonitoring: () => ipcRenderer.send('start-monitoring'),
+  stopMonitoring: () => ipcRenderer.send('stop-monitoring'),
+  onSystemData: (cb: (data: unknown) => void) => {
+    ipcRenderer.on('system-data', (_event, data) => cb(data));
+  },
+  removeSystemDataListener: () => {
+    ipcRenderer.removeAllListeners('system-data');
+  },
+  minimize: () => ipcRenderer.send('window-minimize'),
+  maximize: () => ipcRenderer.send('window-maximize'),
+  close: () => ipcRenderer.send('window-close'),
+});
 
 export type ElectronHandler = typeof electronHandler;

@@ -1,3 +1,7 @@
+## Project OverView
+
+![System Monitor](assets/data/Live-data.png)
+
 ## Install
 
 Clone the repo and install dependencies:

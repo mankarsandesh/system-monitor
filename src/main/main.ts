@@ -1,17 +1,11 @@
 /* eslint global-require: off, no-console: off, promise/always-return: off */
 
-/**
- * This module executes inside of electron's main process. You can start
- * electron renderer process from here and communicate with the other processes
- * through IPC.
- *
- * When running `npm run build` or `npm run build:main`, this file is compiled to
- * `./src/main.js` using webpack. This gives us some performance wins.
- */
-import path from 'path';
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
-import { autoUpdater } from 'electron-updater';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import log from 'electron-log';
+import { autoUpdater } from 'electron-updater';
+import path from 'path';
+import si from 'systeminformation';
+import { SystemData } from '../types';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 
@@ -24,12 +18,117 @@ class AppUpdater {
 }
 
 let mainWindow: BrowserWindow | null = null;
+let monitoringInterval: NodeJS.Timeout | null = null;
+
+// ─── GET System Data Collection ──────────────────────────────────────────────────
+
+async function collectSystemData(): Promise<SystemData> {
+  const [cpuLoad, mem, fsSize, netStats, procs, osInfo, cpuTemp] =
+    await Promise.all([
+      si.currentLoad(),
+      si.mem(),
+      si.fsSize(),
+      si.networkStats(),
+      si.processes(),
+      si.osInfo(),
+      si.cpuTemperature(),
+    ]);
+
+  return {
+    cpu: {
+      load: Math.round(cpuLoad.currentLoad),
+      cores: cpuLoad.cpus.map((c) => Math.round(c.load)),
+    },
+    memory: {
+      total: mem.total,
+      used: mem.active,
+      free: mem.available,
+      percent: Math.round((mem.active / mem.total) * 100),
+    },
+    disk: fsSize
+      .filter((d) => d.size > 0)
+      .map((d) => ({
+        fs: d.fs,
+        mount: d.mount,
+        size: d.size,
+        used: d.used,
+        percent: Math.round(d.use),
+      })),
+    network: {
+      rx: Math.max(0, netStats[0]?.rx_sec ?? 0),
+      tx: Math.max(0, netStats[0]?.tx_sec ?? 0),
+      interface: netStats[0]?.iface ?? 'N/A',
+    },
+    processes: {
+      all: procs.all,
+      running: procs.running,
+      list: procs.list
+        .sort((a, b) => b.cpu - a.cpu)
+        .slice(0, 10)
+        .map((p) => ({
+          pid: p.pid,
+          name: p.name,
+          cpu: parseFloat(p.cpu.toFixed(1)),
+          mem: parseFloat(p.mem.toFixed(1)),
+        })),
+    },
+    os: {
+      platform: osInfo.platform,
+      distro: osInfo.distro,
+      hostname: osInfo.hostname,
+      arch: osInfo.arch,
+    },
+    temp: Math.round(cpuTemp.main ?? 0),
+    timestamp: Date.now(),
+  };
+}
+
+// ─── GET IPC: System Monitoring ──────────────────────────────────────────────────
+
+ipcMain.on('start-monitoring', () => {
+  if (monitoringInterval) return;
+
+  const tick = async () => {
+    try {
+      const data = await collectSystemData();
+      mainWindow?.webContents.send('system-data', data);
+    } catch (err) {
+      console.error('System monitor error:', err);
+    }
+  };
+
+  tick(); 
+  monitoringInterval = setInterval(tick, 1500);
+});
+
+ipcMain.on('stop-monitoring', () => {
+  if (monitoringInterval) {
+    clearInterval(monitoringInterval);
+    monitoringInterval = null;
+  }
+});
+
+// ─── GET IPC: Window Controls 
+
+ipcMain.on('window-minimize', () => mainWindow?.minimize());
+ipcMain.on('window-maximize', () => {
+  if (mainWindow?.isMaximized()) {
+    mainWindow.unmaximize();
+  } else {
+    mainWindow?.maximize();
+  }
+});
+ipcMain.on('window-close', () => mainWindow?.close());
+
+// ─── IPC: Legacy test ────────────────────────────────────────────────────────
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
   console.log(msgTemplate(arg));
   event.reply('ipc-example', msgTemplate('pong'));
 });
+
+// ─── GET App Setup ───────────────────────────────────────────────────────────────
 
 if (process.env.NODE_ENV === 'production') {
   const sourceMapSupport = require('source-map-support');
@@ -50,7 +149,7 @@ const installExtensions = async () => {
 
   return installer
     .default(
-      extensions.map((name) => installer[name]),
+      extensions.map((name: string) => installer[name]),
       forceDownload,
     )
     .catch(console.log);
@@ -74,6 +173,7 @@ const createWindow = async () => {
     width: 1024,
     height: 728,
     icon: getAssetPath('icon.png'),
+    titleBarStyle: 'hidden',
     webPreferences: {
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
@@ -95,30 +195,27 @@ const createWindow = async () => {
   });
 
   mainWindow.on('closed', () => {
+    // Stop monitoring when window closes
+    if (monitoringInterval) {
+      clearInterval(monitoringInterval);
+      monitoringInterval = null;
+    }
     mainWindow = null;
   });
 
   const menuBuilder = new MenuBuilder(mainWindow);
   menuBuilder.buildMenu();
 
-  // Open urls in the user's browser
   mainWindow.webContents.setWindowOpenHandler((edata) => {
     shell.openExternal(edata.url);
     return { action: 'deny' };
   });
 
-  // Remove this if your app does not use auto updates
   // eslint-disable-next-line
   new AppUpdater();
 };
 
-/**
- * Add event listeners...
- */
-
 app.on('window-all-closed', () => {
-  // Respect the OSX convention of having the application in memory even
-  // after all windows have been closed
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -129,8 +226,6 @@ app
   .then(() => {
     createWindow();
     app.on('activate', () => {
-      // On macOS it's common to re-create a window in the app when the
-      // dock icon is clicked and there are no other windows open.
       if (mainWindow === null) createWindow();
     });
   })
