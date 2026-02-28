@@ -1,5 +1,6 @@
 import './App.css';
 
+import { useEffect, useState } from 'react';
 import { Cpu, MemoryStick, Wifi } from 'lucide-react';
 import CoreGrid from '../components/CoreGrid';
 import DiskCard from '../components/DiskCard';
@@ -11,7 +12,20 @@ import TitleBar from '../components/TitleBar';
 import { useSystemMonitor } from '../hooks/useSystemMonitor';
 import { formatBytes } from '../utils/format';
 
+type Theme = 'dark' | 'light';
+
 export default function App() {
+  const [theme, setTheme] = useState<Theme>(
+    () => (localStorage.getItem('theme') as Theme) ?? 'dark'
+  );
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme(t => (t === 'dark' ? 'light' : 'dark'));
+
   const {
     data,
     cpuHistory,
@@ -32,7 +46,7 @@ export default function App() {
 
   return (
     <div className="app">
-      <TitleBar />
+      <TitleBar theme={theme} onToggleTheme={toggleTheme} />
 
       <main className="dashboard">
         <div className="row gauges-row">
